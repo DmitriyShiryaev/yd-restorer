@@ -169,8 +169,9 @@ function restore(date, dateBackupMaxString, excludeDir, excludedFiles, dateChang
 
             async function expandGroups() {
                 const $buttons = $cluster.find(
-                    '.journal-group-content button:contains(Показать все),' +
-                    '.journal-group-content__button:contains(Показать все)',
+                    '.journal-group-content button:contains(Показать),' +
+                    '.journal-group-content__button:contains(Показать),',
+                    '.journal-group-content__button:contains(Ещё)',
                 );
                 if ($buttons.length < 1) {
                     debug && console.log('No more expand buttons found');
@@ -182,13 +183,12 @@ function restore(date, dateBackupMaxString, excludeDir, excludedFiles, dateChang
                 $buttons.click();
 
                 debug && console.log('Waiting for journal-group-item');
-                await elementAdded('.journal-group-item', $document);
+                await elementAdded('.journal-group-item', $document, true);
 
                 debug && console.log('journal-group-item appeared');
 
                 setTimeout(expandGroups, 100);
             }
-
             expandGroups();
         });
     }
@@ -529,27 +529,31 @@ function restore(date, dateBackupMaxString, excludeDir, excludedFiles, dateChang
         });
     }
 
-    function elementAdded(selector, parent) {
+    async function elementAdded(selector, parent, forceWait) {
 
-        debug && console.log("waiting for '" + selector + "'");
+        debug && console.log("Waiting for '" + selector + "'");
 
         return new Promise((resolve, reject) => {
 
             let $parent = $(parent);
-            let $element = $parent.find(selector);
-            debug && console.log($element);
-            if ($element.length > 0) {
-                resolve($element);
+            if (!forceWait) {
+                let $element = $parent.find(selector);
+                debug && console.log('elementAdded: element:', $element);
+                if ($element.length > 0) {
+                    debug && console.log("'" + selector + "'" + " appeared");
+                    resolve($element);
+                }
             }
 
             var observer = new MutationObserver(function (mutations) {
                 mutations.forEach(function (mutation) {
                     if (mutation.addedNodes && mutation.addedNodes.length > 0) {
                         [].some.call(mutation.addedNodes, function (el) {
-                            debug && console.log(el);
-                            $element = $(el);
+                            debug && console.log('elementAdded: element:', el);
+                            let $element = $(el);
                             if ($element.is(selector)) {
                                 observer.disconnect();
+                                debug && console.log("'" + selector + "'" + " appeared");
                                 resolve($element);
                             }
                         });
