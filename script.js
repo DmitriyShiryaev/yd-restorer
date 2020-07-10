@@ -84,6 +84,7 @@ function restore(date, dateBackupMaxString, excludeDir, excludedFiles, dateChang
 
         markExcluded($cluster.find('.journal-group:has(.journal-group__container:contains(' + excludeDir + '))'));
 
+        await expandCluster($cluster);
         await expandJournalGroups($cluster);
 
         await new Promise((resolve, reject) => {
@@ -157,6 +158,31 @@ function restore(date, dateBackupMaxString, excludeDir, excludedFiles, dateChang
         $element.addClass('processed');
     }
 
+    // let debug = true
+    async function expandCluster($cluster) {
+
+        debug && console.log('Expanding cluster');
+
+        return new Promise((resolve, reject) => {
+
+            async function expand($cluster) {
+                if ($cluster.next('.journal-cluster').length >= 1) {
+                    debug && console.log('Сluster expanded');
+                    resolve();
+                    return;
+                }
+
+                debug && console.log('Scrolling the page');
+                $('html, body').scrollTop($(document).height());
+
+                await elementAdded('.journal-group', document, true);
+
+                setTimeout(function() { expand($cluster); }, 100);
+            }
+            expand($cluster);
+        });
+    }
+
     /* $cluster.find(
         '.journal-group-content button:contains(Показать все),' +
         '.journal-group-content__button:contains(Показать все)',
@@ -165,7 +191,7 @@ function restore(date, dateBackupMaxString, excludeDir, excludedFiles, dateChang
     async function expandJournalGroups($cluster) {
 
         const $document = $(document);
-        await new Promise((resolve, reject) => {
+        return new Promise((resolve, reject) => {
 
             async function expandGroups() {
                 const $buttons = $cluster.find(
@@ -244,7 +270,7 @@ function restore(date, dateBackupMaxString, excludeDir, excludedFiles, dateChang
     async function restoreMultiple($journalGroup) {
         let $item = $journalGroup.find('.journal-group-item').first();
 
-        await new Promise((resolve, reject) => {
+        return new Promise((resolve, reject) => {
             async function restoreItemChain($item) {
                 while ($item.hasClass('processed')) {
                     $item = $item.next();
@@ -462,7 +488,7 @@ function restore(date, dateBackupMaxString, excludeDir, excludedFiles, dateChang
 
     function elementClassAdded(selector, cssClass, parent) {
 
-        debug && console.log("waiting for '" + selector + "[+class=" + cssClass + "]'");
+        debug && console.log("Waiting for '" + selector + "[+class=" + cssClass + "]'");
 
         return new Promise((resolve, reject) => {
 
@@ -497,7 +523,7 @@ function restore(date, dateBackupMaxString, excludeDir, excludedFiles, dateChang
 
     function elementClassRemoved(selector, cssClass, parent) {
 
-        debug && console.log("waiting for '" + selector + "[-class=" + cssClass + "]'");
+        debug && console.log("Waiting for '" + selector + "[-class=" + cssClass + "]'");
 
         return new Promise((resolve, reject) => {
 
