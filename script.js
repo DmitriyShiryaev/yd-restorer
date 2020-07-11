@@ -1,23 +1,39 @@
 // Copyright 2020 Dmitrii Shiriaev. This software was released under the MIT license
 
-function restore(date, dateBackupMaxString, excludeDir, excludedFiles, dateChangedMaxString) {
+function restore(date, dateBackupMaxString, dateChangedMaxString, excludedFolders, excludedFiles, filesToRestore) {
 
     //init('15 апреля', '2020-04-12T00:00:00+07:00');
     //init(c, '2020-04-12T00:00:00+07:00');
     //let date = '15 апреля';
     //let date = '15 апреля';
     //let date = '13 апреля';
-    /*let dateBackupMaxString = '2020-04-12T00:00:00+07:00';
+/*    let date = '12 апреля';
+    let dateBackupMaxString = '2020-04-12T00:00:00+07:00';
     let dateChangedMaxString = '2020-07-01T00:00:00+07:00';
-    let excludeDir = 'Отчет';
+    let excludedFolders = [
+        'Work/Experience/Plesk/Документы/Отчет',
+        'Work/Experience/Plesk/Документы/Отчет/2020.04',
+    ];
     let excludedFiles = [
+
+    ];
+    let filesToRestore = [
 
     ];*/
 
     let debug = false;
     let simulateRestore = false;
+    let showFrame = false;
+    let expandHistory = true;
 
+    /*let debug = true;
+    let simulateRestore = false;
+    let showFrame = true;
+    let expandHistory = true;*/
+
+    excludedFolders = excludedFolders || [];
     excludedFiles = excludedFiles || [];
+    let restoredFolders = [];
     let restoredFiles = [];
     let errorFiles = [];
     let dateBackupMax;
@@ -27,7 +43,7 @@ function restore(date, dateBackupMaxString, excludeDir, excludedFiles, dateChang
     let $clusterTitle;
     let $restoreFrame;
 
-    function init(date, dateBackupMaxString, dateChangedMaxString) {
+    async function init() {
 
         console.log("Init '" + date + "' day");
 
@@ -57,6 +73,14 @@ function restore(date, dateBackupMaxString, excludeDir, excludedFiles, dateChang
         console.log("'" + date + "' cluster has been found");
         markProcessing($cluster);
 
+        expandHistory && await expandCluster($cluster);
+        expandHistory && await expandJournalGroups($cluster);
+
+        if (!filesToRestore || filesToRestore.length <= 0) {
+            filesToRestore = getFilesToRestore($cluster);
+        }
+        debug && console.log('Files to restore:', filesToRestore);
+
         $('.root__content_page_journal').css('margin-right', '500px');
         $('.journal-filter').css('right', '500px');
         $restoreFrame = $("#restoreFrame");
@@ -72,20 +96,68 @@ function restore(date, dateBackupMaxString, excludeDir, excludedFiles, dateChang
                         'right: 0;' +
                         'height: 100%;' +
                         'width: 500px;' +
-                        'z-index: 100;'
+                        'z-index: 100;' +
+                        (showFrame ? '': 'display: none;')
                 }
             );
             $restoreFrame.appendTo('body');
         }
     }
 
-    // restoreDay($cluster, excludeDir);
-    async function restoreDay($cluster, excludeDir) {
+    function getFilesToRestore($cluster) {
+        console.log('Collecting files to restore');
 
-        markExcluded($cluster.find('.journal-group:has(.journal-group__container:contains(' + excludeDir + '))'));
+        let files = [];
+        $cluster
+            .find('.journal-group:has(.journal-group__container:contains(изменили))')
+            .each(function() {
+                const $journalGroup = $(this);
 
-        await expandCluster($cluster);
-        await expandJournalGroups($cluster);
+                let $journalGroupContainer = getJournalGroupContainerSingle($journalGroup);
+                if ($journalGroupContainer.length > 0) {
+                    const $fileLink = $journalGroupContainer.find('div > span > span > a');
+                    const $filePath = getFilePath(
+                        getFileUrl(
+                            $fileLink.attr('href')
+                        )
+                    );
+                    if ($filePath) {
+                        files.push($filePath);
+                    }
+
+                } else {
+                    $journalGroupContainer = getJournalGroupContainerMultiple($journalGroup);
+                    if ($journalGroupContainer.length > 0) {
+                        $journalGroup
+                            .find('.journal-group-item')
+                            .each(function() {
+                                const $item = $(this);
+                                let href;
+                                if ($item.is('a')) {
+                                    href = $item.attr('href');
+                                } else {
+                                    let $link = $item.find('a.journal-group-item__name');
+                                    if ($link.length <= 0) {
+                                        return;
+                                    }
+                                    href = $link.attr('href');
+                                }
+                                const $filePath = getFilePath(
+                                    getFileUrl(href)
+                                );
+                                if ($filePath) {
+                                    files.push($filePath);
+                                }
+                            });
+                    }
+                }
+
+            });
+        files.sort();
+        return files;
+    }
+
+    async function restoreDay() {
 
         await new Promise((resolve, reject) => {
             async function restoreJournalGroupChain($journalGroup) {
@@ -97,32 +169,8 @@ function restore(date, dateBackupMaxString, excludeDir, excludedFiles, dateChang
                     return;
                 }
 
-                markProcessing($journalGroup);
+                await restoreJournalGroup($journalGroup);
 
-                console.log('journal-group__time:' + $journalGroup.find('.journal-group__time').text());
-
-                let $journalGroupContainer = $journalGroup.find(
-                    '.journal-group__container:contains(изменили файл),' +
-                    '.journal-group__container:contains(изменили видео),' +
-                    '.journal-group__container:contains(изменили фото)'
-                );
-                if ($journalGroupContainer.length > 0) {
-                    console.log('journal-group is single');
-                    await restoreSingle($journalGroupContainer);
-
-                } else {
-                    $journalGroupContainer = $journalGroup
-                        .find('.journal-group__container:contains(изменили)')
-                        .filter(function () {
-                            return this.textContent.match(/изменили \d+/);
-                        });
-                    if ($journalGroupContainer.length > 0) {
-                        console.log('journal-group is multiple');
-                        await restoreMultiple($journalGroup);
-                    }
-                }
-
-                markExcluded($journalGroup);
                 setTimeout(function() { restoreJournalGroupChain($journalGroup.next()); }, 100);
             }
 
@@ -130,112 +178,216 @@ function restore(date, dateBackupMaxString, excludeDir, excludedFiles, dateChang
         });
 
         console.log("'" + date + "' day has been processed");
-        console.log(restoredFiles.length + ' restoredFiles: ', restoredFiles);
-        console.log(errorFiles.length + ' errorFiles: ', errorFiles);
+        console.log(restoredFolders.length + ' restoredFolders: ', restoredFolders.sort());
+        console.log(restoredFiles.length + ' restoredFiles: ', restoredFiles.sort());
+        console.log(errorFiles.length + ' errorFiles: ', errorFiles.sort());
 
         markExcluded($cluster);
     }
 
-    function markProcessing($element) {
-        $element.css('border', '2px solid orange');
-    }
-    function markRestored($element) {
-        markProcessed($element);
-        $element.css('background', 'green');
-        $element.css('border', '');
-    }
-    function markExcluded($element) {
-        markProcessed($element);
-        $element.css('background', 'gray');
-        $element.css('border', '');
-    }
-    function markError($element) {
-        markProcessed($element);
-        $element.css('background', 'red');
-        $element.css('border', '');
-    }
-    function markProcessed($element) {
-        $element.addClass('processed');
+    async function restoreJournalGroup($journalGroup) {
+        markProcessing($journalGroup);
+
+        console.log('journal-group__time:' + $journalGroup.find('.journal-group__time').text());
+
+        let $isFolder = $journalGroup.find('.journal-group__container:contains(в папке)');
+        if ($isFolder.length > 0) {
+            console.log('journal-group is folder');
+            try {
+                await restoreFolder($journalGroup);
+            } catch(e) {
+                console.log("Can't restore folder: ", e);
+            }
+        }
+
+        let $journalGroupContainer = getJournalGroupContainerSingle($journalGroup);
+        if ($journalGroupContainer.length > 0) {
+            console.log('journal-group is single');
+            await restoreSingle($journalGroup);
+
+        } else {
+            $journalGroupContainer = getJournalGroupContainerMultiple($journalGroup);
+            if ($journalGroupContainer.length > 0) {
+                console.log('journal-group is multiple');
+                await restoreMultiple($journalGroup);
+            }
+        }
+
+        markExcluded($journalGroup);
     }
 
-    // let debug = true
-    async function expandCluster($cluster) {
+    function getJournalGroupContainerSingle($journalGroup) {
+        return $journalGroup.find(
+            '.journal-group__container:contains(изменили файл),' +
+            '.journal-group__container:contains(изменили видео),' +
+            '.journal-group__container:contains(изменили фото)'
+        );
+    }
 
-        debug && console.log('Expanding cluster');
+    function getJournalGroupContainerMultiple($journalGroup) {
+        return $journalGroup
+            .find('.journal-group__container:contains(изменили)')
+            .filter(function () {
+                return this.textContent.match(/изменили \d+/);
+            });
+    }
+
+    async function restoreFolder($journalGroup) {
+        let href = getJournalGroupFolderUrl($journalGroup);
+        return await restoreFolderUrl(href, dateBackupMax, dateChangedMax);
+    }
+
+    async function restoreFolderUrl(href, dateBackupMax, dateChangedMax) {
+        if (!href) {
+            return;
+        }
+
+        const folderPath = getFilePath(href);
+        debug && console.log("folderPath: ", folderPath);
+        if (excludedFolders.indexOf(folderPath) >= 0) {
+            debug && console.log("'" + folderPath + "' folder is in excluded list");
+            return;
+        }
+        if (restoredFolders.indexOf(folderPath) >= 0) {
+            debug && console.log("'" + folderPath + "' folder is already restored");
+            return;
+        }
+
+        let frameLoaded = $.Deferred();
+        $restoreFrame.attr('src', href);
+        $restoreFrame.on('load', frameLoaded.resolve);
+        await frameLoaded.promise();
+        $restoreFrame.off('load', frameLoaded.resolve);
+
+        const $document = $($restoreFrame[0].contentWindow.document);
+
+        $('.listing-type__icon_icons', $document).click();
+
+        await expandFolder($document);
+
+        await new Promise((resolve, reject) => {
+            async function restoreItemChain($item) {
+                while (
+                    $item.length > 0 &&
+                    !$item.is('.listing-item_type_file')
+                ) {
+                    $item = $item.next();
+                }
+                if ($item.length <= 0) {
+                    resolve();
+                    return;
+                }
+
+                markProcessing($item);
+
+                let fileName = getFileNameInFolder($item);
+                if (!fileName) {
+                    markExcluded($item);
+                    setTimeout(function() { restoreItemChain($item.next()); }, 100);
+                    return;
+                }
+
+                const filePath = folderPath + '/' + fileName;
+                if (filesToRestore.indexOf(filePath) < 0 ||
+                    excludedFiles.indexOf(filePath) >= 0
+                ) {
+                    markExcluded($item);
+                    setTimeout(function() { restoreItemChain($item.next()); }, 100);
+                    return;
+                }
+                if (restoredFiles.indexOf(filePath) >= 0) {
+                    markRestored($item);
+                    setTimeout(function() { restoreItemChain($item.next()); }, 100);
+                    return;
+                }
+                if (errorFiles.indexOf(filePath) >= 0) {
+                    markError($item);
+                    setTimeout(function() { restoreItemChain($item.next()); }, 100);
+                    return;
+                }
+
+                $item.click();
+
+                let restored;
+                try {
+                    restored = await restoreSelectedFileInFolder(dateBackupMax, dateChangedMax, $document);
+                } catch (e) {
+                    console.log(e);
+                    markError($item);
+                    errorFiles.push(filePath);
+                    setTimeout(function() { restoreItemChain($item.next()); }, 100);
+                    return;
+                }
+
+                if (restored) {
+                    markRestored($item);
+                    restoredFiles.push(filePath);
+                } else {
+                    markExcluded($item);
+                    excludedFiles.push(filePath);
+                }
+
+                setTimeout(function() { restoreItemChain($item.next()); }, 100);
+            }
+
+            restoreItemChain(
+                $('.listing-item', $document).first()
+            );
+        });
+
+        restoredFolders.push(folderPath);
+    }
+
+    async function expandFolder($document) {
+
+        debug && console.log('Expanding folder');
+
+        let $listing = $('.listing', $document);
+        if ($listing.length < 1) {
+            debug && console.log("Can't find folder listing");
+            return;
+        }
 
         return new Promise((resolve, reject) => {
 
-            async function expand($cluster) {
-                if ($cluster.next('.journal-cluster').length >= 1) {
-                    debug && console.log('Сluster expanded');
+            async function expand($listing) {
+                if ($listing.is('.listing_completed')) {
+                    debug && console.log('Folder listing has been expanded');
                     resolve();
                     return;
                 }
 
                 debug && console.log('Scrolling the page');
-                $('html, body').scrollTop($(document).height());
+                $('html, body', $document).scrollTop($document.height());
 
-                await elementAdded('.journal-group', document, true);
-
-                setTimeout(function() { expand($cluster); }, 100);
+                setTimeout(function() { expand($listing); }, 100);
             }
-            expand($cluster);
+            expand($listing);
         });
     }
 
-    /* $cluster.find(
-        '.journal-group-content button:contains(Показать все),' +
-        '.journal-group-content__button:contains(Показать все)',
-    ).length */
-    //(async () => { await expandJournalGroups($cluster); console.log('end'); })()
-    async function expandJournalGroups($cluster) {
+    async function restoreSingle($journalGroup) {
 
-        const $document = $(document);
-        return new Promise((resolve, reject) => {
+        const $journalGroupContainer = getJournalGroupContainerSingle($journalGroup);
 
-            async function expandGroups() {
-                const $buttons = $cluster.find(
-                    '.journal-group-content button:contains(Показать),' +
-                    '.journal-group-content__button:contains(Показать),',
-                    '.journal-group-content__button:contains(Ещё)',
-                );
-                if ($buttons.length < 1) {
-                    debug && console.log('No more expand buttons found');
-                    resolve();
-                    return;
-                }
-
-                debug && console.log('Clicking expand buttons');
-                $buttons.click();
-
-                debug && console.log('Waiting for journal-group-item');
-                await elementAdded('.journal-group-item', $document, true);
-
-                debug && console.log('journal-group-item appeared');
-
-                setTimeout(expandGroups, 100);
-            }
-            expandGroups();
-        });
-    }
-
-    async function restoreSingle($journalGroupContainer) {
-        let $link = $journalGroupContainer
+        const $fileLink = $journalGroupContainer
             .find('div > span > span > a');
-        if ($link.length <= 0) {
+        if ($fileLink.length <= 0) {
             markExcluded($journalGroupContainer);
             return;
         }
 
-        let href = $link.attr('href');
-        const fileUrl = getFileUrl(href);
+        const fileHref = $fileLink.attr('href');
+        const fileUrl = getFileUrl(fileHref);
         if (!fileUrl) {
             markExcluded($journalGroupContainer);
             return;
         }
 
         const filePath = getFilePath(fileUrl);
-        if (excludedFiles.indexOf(filePath) >= 0) {
+        if (filesToRestore.indexOf(filePath) < 0 ||
+            excludedFiles.indexOf(filePath) >= 0
+        ) {
             markExcluded($journalGroupContainer);
             return;
         }
@@ -250,7 +402,7 @@ function restore(date, dateBackupMaxString, excludeDir, excludedFiles, dateChang
 
         let restored;
         try {
-            restored = await restoreFile(href, dateBackupMax, dateChangedMax);
+            restored = await restoreFileHref(fileHref, dateBackupMax, dateChangedMax);
         } catch (e) {
             console.log(e);
             markError($journalGroupContainer);
@@ -302,7 +454,9 @@ function restore(date, dateBackupMaxString, excludeDir, excludedFiles, dateChang
                 }
 
                 const filePath = getFilePath(fileUrl);
-                if (excludedFiles.indexOf(filePath) >= 0) {
+                if (filesToRestore.indexOf(filePath) < 0 ||
+                    excludedFiles.indexOf(filePath) >= 0
+                ) {
                     markExcluded($item);
                     setTimeout(function() { restoreItemChain($item.next()); }, 100);
                     return;
@@ -320,7 +474,7 @@ function restore(date, dateBackupMaxString, excludeDir, excludedFiles, dateChang
 
                 let restored;
                 try {
-                    restored = await restoreFile(href, dateBackupMax, dateChangedMax);
+                    restored = await restoreFileHref(href, dateBackupMax, dateChangedMax);
                 } catch (e) {
                     console.log(e);
                     markError($item);
@@ -344,6 +498,39 @@ function restore(date, dateBackupMaxString, excludeDir, excludedFiles, dateChang
         });
     }
 
+    function getJournalGroupFolderUrl($journalGroup) {
+
+        let $link = $journalGroup.find('.journal-group__container a'); //.find('div > span > span').next()
+        if ($link.length <= 0) {
+            debug && console.log("Can't parse journal-group folder link");
+            return;
+        }
+        if ($link.length == 1) {
+            $link = $link.first();
+        } else if ($link.length == 2) {
+            $link = $link.eq(1);
+        } else {
+            debug && console.log("Can't parse journal-group folder link");
+            return;
+        }
+
+        return $link.attr('href');
+    }
+
+    function getFolderUrl(href) {
+        if (!href) {
+            debug && console.log("Can't get folder URL from empty href");
+            return false;
+        }
+        const folderUrl = href.split('|')[0];
+        if (!folderUrl) {
+            debug && console.log("Can't get folder URL from href");
+            return false;
+        }
+        debug && console.log("folderUrl:", folderUrl);
+        return folderUrl;
+    }
+
     function getFileUrl(href) {
         if (!href) {
             return false;
@@ -356,16 +543,54 @@ function restore(date, dateBackupMaxString, excludeDir, excludedFiles, dateChang
     }
 
     function getFilePath(fileUrl) {
-        return decodeURIComponent(
+        if (!fileUrl) {
+            debug && console.log("Can't get file path from empty url");
+            return false;
+        }
+        const filePath = decodeURIComponent(
             fileUrl
+                .replace('https://disk.yandex.ru', '')
+                .replace(/^\//, '')
                 .replace('select/disk/', '')
                 .replace('slider/disk/', '')
+                .replace('client/disk/', '')
         );
+        debug && console.log("filePath: " + filePath);
+        return filePath;
     }
 
-    //restoreFile('https://disk.yandex.ru/client/disk/%D0%94%D0%BE%D0%BA%D1%83%D0%BC%D0%B5%D0%BD%D1%82%D1%8B/0Book/0%D0%92%D0%95%D0%94%D0%AB/0%D0%9A%D0%BD%D0%B8%D0%B3%D0%B8|select/disk/%D0%94%D0%BE%D0%BA%D1%83%D0%BC%D0%B5%D0%BD%D1%82%D1%8B/0Book/0%D0%92%D0%95%D0%94%D0%AB/0%D0%9A%D0%BD%D0%B8%D0%B3%D0%B8/%D0%A1%D0%BB%D0%B0%D0%B2%D1%8F%D0%BD%D0%B5%20%D0%B8%20%D0%90%D1%80%D1%8C%D0%B8.%20%D0%9F%D1%83%D1%82%D1%8C%20%D0%B1%D0%BE%D0%B3%D0%BE%D0%B2%20%D0%B8%20%D1%81%D0%BB%D0%BE%D0%B2.pdf', new Date('2020-04-12T00:00:00+07:00'));
-    //restoreFile('/client/disk/%D0%98%D0%B7%D0%BE%D0%B1%D1%80%D0%B0%D0%B6%D0%B5%D0%BD%D0%B8%D1%8F/0Photo/0%D0%9C%D0%BE%D0%B8/2018/2018.12.20%20%D0%9D%D0%BE%D0%B2%D0%BE%D0%B3%D0%BE%D0%B4%D0%BD%D0%B8%D0%B9%20%D1%83%D1%82%D1%80%D0%B5%D0%BD%D0%BD%D0%B8%D0%BA%20%D0%B2%20%D0%B4%D0%B5%D1%82%D1%81%D0%BA%D0%BE%D0%BC%20%D1%81%D0%B0%D0%B4%D1%83|slider/disk/%D0%98%D0%B7%D0%BE%D0%B1%D1%80%D0%B0%D0%B6%D0%B5%D0%BD%D0%B8%D1%8F/0Photo/0%D0%9C%D0%BE%D0%B8/2018/2018.12.20%20%D0%9D%D0%BE%D0%B2%D0%BE%D0%B3%D0%BE%D0%B4%D0%BD%D0%B8%D0%B9%20%D1%83%D1%82%D1%80%D0%B5%D0%BD%D0%BD%D0%B8%D0%BA%20%D0%B2%20%D0%B4%D0%B5%D1%82%D1%81%D0%BA%D0%BE%D0%BC%20%D1%81%D0%B0%D0%B4%D1%83/2018-12-20%2009-46-30.jpg', new Date('2020-04-12T00:00:00+07:00'));
-    async function restoreFile(href, dateBackupMax, dateChangedMax) {
+    function getFileNameInFolder($item) {
+        let $fileName = $('.listing-item__title .clamped-text', $item);
+        if ($fileName.length <= 0) {
+            debug && console.log("Can't find clamped file name in folder");
+            return;
+        }
+        let fileName = $fileName.attr('title');
+        if (fileName) {
+            return fileName;
+        }
+
+        fileName = $fileName.text();
+        if (!fileName) {
+            debug && console.log("Can't find file title in folder");
+        }
+        return fileName;
+    }
+
+    //restoreFileHref('https://disk.yandex.ru/client/disk/%D0%94%D0%BE%D0%BA%D1%83%D0%BC%D0%B5%D0%BD%D1%82%D1%8B/0Book/0%D0%92%D0%95%D0%94%D0%AB/0%D0%9A%D0%BD%D0%B8%D0%B3%D0%B8|select/disk/%D0%94%D0%BE%D0%BA%D1%83%D0%BC%D0%B5%D0%BD%D1%82%D1%8B/0Book/0%D0%92%D0%95%D0%94%D0%AB/0%D0%9A%D0%BD%D0%B8%D0%B3%D0%B8/%D0%A1%D0%BB%D0%B0%D0%B2%D1%8F%D0%BD%D0%B5%20%D0%B8%20%D0%90%D1%80%D1%8C%D0%B8.%20%D0%9F%D1%83%D1%82%D1%8C%20%D0%B1%D0%BE%D0%B3%D0%BE%D0%B2%20%D0%B8%20%D1%81%D0%BB%D0%BE%D0%B2.pdf', new Date('2020-04-12T00:00:00+07:00'));
+    //restoreFileHref('/client/disk/%D0%98%D0%B7%D0%BE%D0%B1%D1%80%D0%B0%D0%B6%D0%B5%D0%BD%D0%B8%D1%8F/0Photo/0%D0%9C%D0%BE%D0%B8/2018/2018.12.20%20%D0%9D%D0%BE%D0%B2%D0%BE%D0%B3%D0%BE%D0%B4%D0%BD%D0%B8%D0%B9%20%D1%83%D1%82%D1%80%D0%B5%D0%BD%D0%BD%D0%B8%D0%BA%20%D0%B2%20%D0%B4%D0%B5%D1%82%D1%81%D0%BA%D0%BE%D0%BC%20%D1%81%D0%B0%D0%B4%D1%83|slider/disk/%D0%98%D0%B7%D0%BE%D0%B1%D1%80%D0%B0%D0%B6%D0%B5%D0%BD%D0%B8%D1%8F/0Photo/0%D0%9C%D0%BE%D0%B8/2018/2018.12.20%20%D0%9D%D0%BE%D0%B2%D0%BE%D0%B3%D0%BE%D0%B4%D0%BD%D0%B8%D0%B9%20%D1%83%D1%82%D1%80%D0%B5%D0%BD%D0%BD%D0%B8%D0%BA%20%D0%B2%20%D0%B4%D0%B5%D1%82%D1%81%D0%BA%D0%BE%D0%BC%20%D1%81%D0%B0%D0%B4%D1%83/2018-12-20%2009-46-30.jpg', new Date('2020-04-12T00:00:00+07:00'));
+    async function restoreFileHref(href, dateBackupMax, dateChangedMax) {
+
+        const folderUrl = getFolderUrl(href);
+        if (folderUrl) {
+            const folderPath = getFilePath(folderUrl);
+            if (excludedFolders.indexOf(folderPath) >= 0) {
+                debug && console.log("'" + folderPath + "' folder is in excluded list");
+                return false;
+            }
+            debug && console.log("'" + folderPath + "' folder is NOT in excluded list");
+        }
+
         let frameLoaded = $.Deferred();
         $restoreFrame.attr('src', href);
         $restoreFrame.on('load', frameLoaded.resolve);
@@ -373,6 +598,10 @@ function restore(date, dateBackupMaxString, excludeDir, excludedFiles, dateChang
         $restoreFrame.off('load', frameLoaded.resolve);
 
         const $document = $($restoreFrame[0].contentWindow.document);
+        return await restoreSelectedFileInFolder(dateBackupMax, dateChangedMax, $document);
+    }
+
+    async function restoreSelectedFileInFolder(dateBackupMax, dateChangedMax, $document) {
 
         let $groupableButtons = await elementAdded(
             '.groupable-buttons',
@@ -389,6 +618,12 @@ function restore(date, dateBackupMaxString, excludeDir, excludedFiles, dateChang
 
         /*console.log($document.find('.versions-dialog'));
         console.log($document.find('.versions-dialog').find('.versions-list__month-row'));*/
+
+        debug && console.log('$document[0].location.href:' , $document[0].location.href);
+        const folderPath = getFilePath($document[0].location.href.split('|')[0]);
+        const $item = $('.listing-item_selected', $document);
+        const fileName = getFileNameInFolder($item);
+        const filePath = folderPath + '/' + fileName;
 
         let versionFound = false;
 
@@ -447,7 +682,8 @@ function restore(date, dateBackupMaxString, excludeDir, excludedFiles, dateChang
                             versionFound = true;
                             setTimeout(async () => {
                                     await restoreVersion($versionRow, $document);
-                                    console.log("'" + getFilePath(getFileUrl(href)) + "' has been restored to version '" + versionDate.toISOString() + "'");
+
+                                    console.log("'" + filePath + "' has been restored to version '" + versionDate.toISOString() + "'");
                                     resolve();
                                 }
                             );
@@ -456,7 +692,7 @@ function restore(date, dateBackupMaxString, excludeDir, excludedFiles, dateChang
                     });
                 });
             if (!versionFound && !breakSearch) {
-                reject("No suitable backup version found for '" + href + "'");
+                reject("No suitable backup version found for '" + filePath + "'");
             }
         });
 
@@ -596,13 +832,122 @@ function restore(date, dateBackupMaxString, excludeDir, excludedFiles, dateChang
         });
     }
 
-    init(date, dateBackupMaxString, dateChangedMaxString);
-    restoreDay($cluster, excludeDir);
+    // let debug = true
+    async function expandCluster($cluster) {
+
+        debug && console.log('Expanding cluster');
+
+        return new Promise((resolve, reject) => {
+
+            async function expand($cluster) {
+                if ($cluster.next('.journal-cluster').length >= 1) {
+                    debug && console.log('Сluster expanded');
+                    resolve();
+                    return;
+                }
+
+                debug && console.log('Scrolling the page');
+                $('html, body').scrollTop($(document).height());
+
+                setTimeout(function() { expand($cluster); }, 100);
+            }
+            expand($cluster);
+        });
+    }
+
+    /* $cluster.find(
+        '.journal-group-content button:contains(Показать все),' +
+        '.journal-group-content__button:contains(Показать все)',
+    ).length */
+    //(async () => { await expandJournalGroups($cluster); console.log('end'); })()
+    async function expandJournalGroups($cluster) {
+
+        const $document = $(document);
+        return new Promise((resolve, reject) => {
+
+            async function expandGroups() {
+                const $buttons = $cluster.find(
+                    '.journal-group-content button:contains(Показать),' +
+                    '.journal-group-content__button:contains(Показать),' +
+                    '.journal-group-content button:contains(Ещё),' +
+                    '.journal-group-content__button:contains(Ещё)',
+                );
+                if ($buttons.length < 1) {
+                    debug && console.log('No more expand buttons found');
+                    resolve();
+                    return;
+                }
+
+                debug && console.log('Clicking expand buttons');
+                $buttons.click();
+
+                debug && console.log('Waiting for journal-group-item');
+                await elementAdded('.journal-group-item', $document, true);
+
+                setTimeout(expandGroups, 1000);
+            }
+            expandGroups();
+        });
+    }
+
+    function markProcessing($element) {
+        $element.css('border', '2px solid orange');
+    }
+    function markRestored($element) {
+        markProcessed($element);
+        $element.css('background', 'green');
+        $element.css('border', '');
+    }
+    function markExcluded($element) {
+        markProcessed($element);
+        $element.css('background', 'gray');
+        $element.css('border', '');
+    }
+    function markError($element) {
+        markProcessed($element);
+        $element.css('background', 'red');
+        $element.css('border', '');
+    }
+    function markProcessed($element) {
+        $element.addClass('processed');
+    }
+
+    (async () => {
+        await init();
+        restoreDay();
+    })();
 }
 
 
-/*restore('12 апреля', '2020-04-12T00:00:00+07:00', 'Отчет', [
-
-]);
+/*restore(
+    '12 апреля',
+    '2020-04-12T00:00:00+07:00',
+    '2020-07-01T00:00:00+07:00',
+    [
+        'Work/Experience/Plesk/Документы/Отчет',
+        'Work/Experience/Plesk/Документы/Отчет/2020.04',
+    ],
+    [],
+);
 */
-// restore('13 апреля', '2020-04-12T00:00:00+07:00', 'Отчет');
+/* restore(
+    '13 апреля',
+    '2020-04-12T00:00:00+07:00',
+    '2020-07-01T00:00:00+07:00',
+    [
+        'Work/Experience/Plesk/Документы/Отчет',
+        'Work/Experience/Plesk/Документы/Отчет/2020.04',
+    ],
+    [],
+);
+ */
+/*restore(
+    '15 апреля',
+    '2020-04-12T00:00:00+07:00',
+    '2020-07-01T00:00:00+07:00',
+    [
+        'Work/Experience/Plesk/Документы/Отчет',
+        'Work/Experience/Plesk/Документы/Отчет/2020.04',
+    ],
+    [],
+);*/
