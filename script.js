@@ -11,8 +11,7 @@ function restore(date, dateBackupMaxString, dateChangedMaxString, excludedFolder
     let dateBackupMaxString = '2020-04-12T00:00:00+07:00';
     let dateChangedMaxString = '2020-07-01T00:00:00+07:00';
     let excludedFolders = [
-        'Work/Experience/Plesk/Документы/Отчет',
-        'Work/Experience/Plesk/Документы/Отчет/2020.04',
+
     ];
     let excludedFiles = [
 
@@ -178,6 +177,9 @@ function restore(date, dateBackupMaxString, dateChangedMaxString, excludedFolder
         });
 
         console.log("'" + date + "' day has been processed");
+        console.log(filesToRestore.length + ' filesToRestore: ', filesToRestore.sort());
+        console.log(excludedFolders.length + ' excludedFolders: ', excludedFolders.sort());
+        console.log(excludedFiles.length + ' excludedFiles: ', excludedFiles.sort());
         console.log(restoredFolders.length + ' restoredFolders: ', restoredFolders.sort());
         console.log(restoredFiles.length + ' restoredFiles: ', restoredFiles.sort());
         console.log(errorFiles.length + ' errorFiles: ', errorFiles.sort());
@@ -924,8 +926,7 @@ function restore(date, dateBackupMaxString, dateChangedMaxString, excludedFolder
     '2020-04-12T00:00:00+07:00',
     '2020-07-01T00:00:00+07:00',
     [
-        'Work/Experience/Plesk/Документы/Отчет',
-        'Work/Experience/Plesk/Документы/Отчет/2020.04',
+
     ],
     [],
 );
@@ -935,8 +936,7 @@ function restore(date, dateBackupMaxString, dateChangedMaxString, excludedFolder
     '2020-04-12T00:00:00+07:00',
     '2020-07-01T00:00:00+07:00',
     [
-        'Work/Experience/Plesk/Документы/Отчет',
-        'Work/Experience/Plesk/Документы/Отчет/2020.04',
+
     ],
     [],
 );
@@ -946,8 +946,7 @@ function restore(date, dateBackupMaxString, dateChangedMaxString, excludedFolder
     '2020-04-12T00:00:00+07:00',
     '2020-07-01T00:00:00+07:00',
     [
-        'Work/Experience/Plesk/Документы/Отчет',
-        'Work/Experience/Plesk/Документы/Отчет/2020.04',
+
     ],
     [],
 );*/
